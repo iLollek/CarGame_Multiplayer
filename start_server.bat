@@ -1,0 +1,2 @@
+python CarGameServer.py
+pause
