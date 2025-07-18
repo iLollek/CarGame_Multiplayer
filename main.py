@@ -15,8 +15,8 @@ SCREEN_HEIGHT = 600
 FPS = 60
 
 # CAR TUNING - Easy to modify these values
-MAX_SPEED = 22          # Maximum speed of the car in m/s
-ACCELERATION = 0.25     # How fast the car accelerates
+MAX_SPEED = 99          # Maximum speed of the car in m/s
+ACCELERATION = 0.5     # How fast the car accelerates
 TURN_SPEED = 5         # How responsive steering is (normal driving)
 DRIFT_TURN_SPEED = 3   # How responsive steering is (while drifting)
 
@@ -265,7 +265,7 @@ def main():
     skid_marks = []
     
     # NETWORK SETUP
-    client = CarGameClient("127.0.0.1", 5000, PLAYER_NAME, [120, 0, 240])
+    client = CarGameClient("192.168.178.126", 5000, PLAYER_NAME, [120, 0, 240])
     client.connect()
 
     remote_players = {}

@@ -7,14 +7,6 @@ class CarGameClient:
     """Client for connecting to the car game server."""
 
     def __init__(self, server_ip, server_port, player_name, car_color: list[int]):
-        """
-        Initialize the client connection.
-
-        :param server_ip: IP address of the server.
-        :param server_port: Port of the server.
-        :param player_name: Name of this player.
-        :param car_color: A List containing three integer values between 0-255
-        """
         self.server_ip = server_ip
         self.server_port = server_port
         self.player_name = player_name
@@ -23,10 +15,7 @@ class CarGameClient:
         self.receive_thread = None
         self.car_color = car_color
 
-        # Dict mapping player names to latest received state
         self.other_players = {}
-
-        # Callback to update external game state
         self.on_player_update = None
         self.on_player_disconnect = None
 
@@ -41,35 +30,40 @@ class CarGameClient:
 
     def receive_loop(self):
         """Listen for incoming messages from server."""
+        buffer = ""
         while self.running:
             try:
                 data = self.sock.recv(1024)
                 if not data:
                     break
 
-                try:
-                    message = json.loads(data.decode('utf-8'))
+                buffer += data.decode('utf-8')
 
-                    if "event" in message.keys():
-                        # It's a event, use EventHandler
-                        self.event_handler(message)
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    if not line.strip():
                         continue
 
-                    name = message.get("name")
-                    if name == self.player_name:
-                        continue  # ignore own data
+                    try:
+                        message = json.loads(line)
 
-                    # Store or update player state
-                    self.other_players[name] = message
+                        if "event" in message:
+                            self.event_handler(message)
+                            continue
 
-                    if self.on_player_update:
-                        self.on_player_update(name, message)
+                        name = message.get("name")
+                        if name == self.player_name:
+                            continue
 
-                except json.JSONDecodeError:
-                    print("[WARN] Received invalid JSON")
+                        self.other_players[name] = message
+                        if self.on_player_update:
+                            self.on_player_update(name, message)
+
+                    except json.JSONDecodeError:
+                        print(f"[WARN] Received invalid JSON: {line}")
             except ConnectionResetError:
                 print("[ERROR] Server connection lost (ConnectionResetError)")
-                
+                break
 
         self.running = False
 
@@ -84,21 +78,20 @@ class CarGameClient:
                 "y": y,
                 "angle": angle,
                 "is_drifting": is_drifting,
-                "car_color" : car_color
+                "car_color": car_color
             }
-            self.sock.sendall(json.dumps(message).encode('utf-8'))
+            # send JSON with newline delimiter
+            self.sock.sendall((json.dumps(message) + '\n').encode('utf-8'))
         except Exception as e:
             print(f"[ERROR] Failed to send data: {e}")
             self.running = False
 
     def event_handler(self, message: dict):
         print(f'[INFO] Received Event: {message["event"]}')
-        event = message.get("event", None)
+        event = message.get("event")
 
         if event == "disconnect":
-            # A Player disconnected from the Server
             self.on_player_disconnect(message.get("name"))
-
 
     def close(self):
         """Close the connection to the server."""

@@ -14,31 +14,35 @@ class ClientHandler(threading.Thread):
         self.name = None
 
     def run(self):
+        buffer = ""
         try:
             while self.running:
                 data = self.conn.recv(1024)
                 if not data:
                     break
 
-                try:
-                    message = json.loads(data.decode('utf-8'))
-                    self.name = message.get("name", "Unknown")
+                buffer += data.decode('utf-8')
 
-                    # Broadcast to all other clients
-                    self.server.broadcast(message, exclude=self)
-                except json.JSONDecodeError:
-                    print(f"[WARN] Invalid data from {self.addr}")
-        except ConnectionResetError:
-            pass
-        except ConnectionAbortedError:
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    if not line.strip():
+                        continue
+
+                    try:
+                        message = json.loads(line)
+                        self.name = message.get("name", "Unknown")
+                        self.server.broadcast(message, exclude=self)
+                    except json.JSONDecodeError:
+                        print(f"[WARN] Invalid data from {self.addr}: {line}")
+        except (ConnectionResetError, ConnectionAbortedError):
             pass
         finally:
             self.stop()
 
     def send(self, message_dict):
         try:
-            data = json.dumps(message_dict).encode('utf-8')
-            self.conn.sendall(data)
+            data = json.dumps(message_dict) + '\n'
+            self.conn.sendall(data.encode('utf-8'))
         except Exception:
             self.stop()
 
@@ -48,7 +52,7 @@ class ClientHandler(threading.Thread):
             self.running = False
             self.conn.close()
             self.server.remove_client(self)
-            self.server.broadcast({'event': "disconnect", 'name': f"{self.name}"}, exclude=self)
+            self.server.broadcast({"event": "disconnect", "name": f"{self.name}"}, exclude=self)
 
 
 class CarGameServer:
@@ -106,5 +110,5 @@ class CarGameServer:
 
 
 if __name__ == "__main__":
-    server = CarGameServer(host="0.0.0.0", port=5000)
+    server = CarGameServer(host="192.168.178.126", port=5000)
     server.start()
