@@ -222,6 +222,100 @@ class Speedometer:
             self.target_speed = max_speed
 
 
+class NitroGauge:
+    def __init__(self, x, y, width=60, height=200, max_nitro_ml=100, unit="ml", show_digital_gauge=True,
+                 bg_color=(30, 30, 30), needle_color=(255, 50, 50),
+                 scale_color=(255, 255, 255), text_color=(255, 255, 255)):
+        """
+        Initialize the Nitro gauge.
+        
+        Args:
+            x, y: Top-left position of the gauge
+            width: Width of the gauge rectangle
+            height: Height of the gauge
+            max_nitro_ml: Maximum amount of nitro (in ml)
+            unit: Unit for display (e.g., "ml")
+            show_digital_gauge: Whether to show digital text
+            bg_color: Background color
+            needle_color: Color of the red indicator line
+            scale_color: Border and scale color
+            text_color: Color of any text
+        """
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.max_nitro = max_nitro_ml
+        self.unit = unit
+        self.bg_color = bg_color
+        self.needle_color = needle_color
+        self.scale_color = scale_color
+        self.text_color = text_color
+        self.show_digital_gauge = show_digital_gauge
+
+        self.current_nitro = self.max_nitro
+        self.target_nitro = self.max_nitro
+        self.smooth_factor = 0.1
+
+        self.font_small = pygame.font.Font(None, int(width * 0.5))
+
+    def update_nitro(self, value, smooth=True):
+        """Update the nitro level externally."""
+        value = max(0, min(value, self.max_nitro))
+        if smooth:
+            self.target_nitro = value
+        else:
+            self.current_nitro = value
+            self.target_nitro = value
+
+    def update(self):
+        """Smooth the nitro movement (call every frame)."""
+        diff = self.target_nitro - self.current_nitro
+        self.current_nitro += diff * self.smooth_factor
+
+    def draw(self, surface):
+        """Draw the Nitro gauge on the given surface."""
+        # Outer rectangle
+        pygame.draw.rect(surface, self.bg_color, (self.x, self.y, self.width, self.height))
+        pygame.draw.rect(surface, self.scale_color, (self.x, self.y, self.width, self.height), 2)
+
+        # Fill bar (on left)
+        fill_height = int((self.current_nitro / self.max_nitro) * self.height)
+        fill_rect = pygame.Rect(self.x + 4, self.y + self.height - fill_height, self.width // 2 - 6, fill_height)
+        pygame.draw.rect(surface, (0, 150, 255), fill_rect)
+
+        # Needle (right side, fixed length, moves vertically)
+        needle_y = self.y + (1 - self.current_nitro / self.max_nitro) * self.height
+        needle_x_start = self.x + self.width - 40
+        needle_x_end = self.x + self.width - 0
+        needle_height = 4  # constant thickness (like stroke height)
+
+        pygame.draw.line(surface, self.needle_color,
+                         (needle_x_start, needle_y),
+                         (needle_x_end, needle_y), needle_height)
+
+        # Digital display
+        if self.show_digital_gauge:
+            nitro_text = f"{int(self.current_nitro)} {self.unit}"
+            text_surface = self.font_small.render(nitro_text, True, self.text_color)
+            text_rect = text_surface.get_rect(center=(self.x + self.width // 2, self.y + self.height -20 ))
+            surface.blit(text_surface, text_rect)
+
+    def set_position(self, x, y):
+        """Change the gauge position."""
+        self.x = x
+        self.y = y
+
+    def set_max_nitro(self, max_nitro):
+        """Change the max nitro amount."""
+        self.max_nitro = max_nitro
+        if self.current_nitro > max_nitro:
+            self.current_nitro = max_nitro
+        if self.target_nitro > max_nitro:
+            self.target_nitro = max_nitro
+
+        
+
 # Example usage and demo
 if __name__ == "__main__":
     pygame.init()
@@ -241,6 +335,10 @@ if __name__ == "__main__":
     # Demo variables
     demo_speed = 0
     speed_direction = 1
+
+    nitro_gauge = NitroGauge(700, 350, width=50, height=180, max_nitro_ml=250)
+    demo_nitro = 100
+    nitro_direction = -1  # Start verbrauchend
     
     running = True
     while running:
@@ -267,12 +365,23 @@ if __name__ == "__main__":
         speedometer_ms.update()
         speedometer_mph.update()
         
+        # Nitro-Demo
+        demo_nitro = nitro_direction
+        if demo_nitro == 0:
+            nitro_direction = 1
+        elif demo_nitro == 250:
+            nitro_direction = -1
+
+        nitro_gauge.update_nitro(demo_nitro)
+        nitro_gauge.update()
+
         # Draw everything
         screen.fill((50, 50, 50))
         
         speedometer_kmh.draw(screen)
         speedometer_ms.draw(screen)
         speedometer_mph.draw(screen)
+        nitro_gauge.draw(screen)
         
         # Instructions
         font = pygame.font.Font(None, 36)

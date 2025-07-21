@@ -1,13 +1,11 @@
 import pygame
-import math
 import sys
-import time
 from CarGameClient import CarGameClient
-import random
-from Speedometer import Speedometer
-import math
 from MainMenu import MainMenu
 
+# Game Objects
+from Speedometers import Speedometer, NitroGauge
+from GameObjects import Car, MultiplayerCar
 
 # Initialize Pygame
 pygame.init()
@@ -21,7 +19,8 @@ FPS = 60
 MAX_SPEED = 65          # Maximum speed of the car in m/s
 ACCELERATION = 0.3     # How fast the car accelerates
 TURN_SPEED = 5         # How responsive steering is (normal driving)
-DRIFT_TURN_SPEED = 3   # How responsive steering is (while drifting)
+DRIFT_TURN_SPEED = 2.5   # How responsive steering is (while drifting)
+MAX_NITRO = 100
 
 # Colors
 WHITE = (255, 255, 255)
@@ -53,206 +52,6 @@ class Camera:
     def apply(self, x, y):
         return int(x - self.x), int(y - self.y)
 
-
-class SkidMark:
-    def __init__(self, x, y, angle):
-        self.x = x
-        self.y = y
-        self.angle = angle
-        self.creation_time = time.time()
-        self.lifetime = 3.0
-        self.width = 3
-        self.length = 8
-
-    def is_expired(self):
-        return time.time() - self.creation_time > self.lifetime
-
-    def get_alpha(self):
-        elapsed = time.time() - self.creation_time
-        fade_ratio = 1.0 - (elapsed / self.lifetime)
-        return max(0, min(255, int(255 * fade_ratio)))
-
-    def draw(self, screen, camera):
-        alpha = self.get_alpha()
-        if alpha > 0:
-            screen_x, screen_y = camera.apply(self.x, self.y)
-
-            skid_surface = pygame.Surface((self.length, self.width), pygame.SRCALPHA)
-            skid_color = (*BLACK, alpha)
-            pygame.draw.rect(skid_surface, skid_color, (0, 0, self.length, self.width))
-
-            rotated_skid = pygame.transform.rotate(skid_surface, -self.angle)
-            skid_rect = rotated_skid.get_rect(center=(screen_x, screen_y))
-
-            screen.blit(rotated_skid, skid_rect)
-
-
-class MultiplayerCar:
-    """A car controlled externally (e.g., via network) for multiplayer visualization."""
-
-    def __init__(self, x, y, name, car_color):
-        """
-        Initialize a multiplayer car.
-
-        :param x: Initial x-position in world coordinates.
-        :param y: Initial y-position in world coordinates.
-        :param name: String containing the player's name to render above the car.
-        :param car_color: A List containing three integers between 0-255
-        """
-        self.x = x
-        self.y = y
-        self.angle = 0
-        self.car_color = car_color
-        self.name = name
-        self.is_drifting = False
-        self.width = 30
-        self.height = 15
-        self.font = pygame.font.Font(None, 24)
-        self.visible = True
-
-    def update_state(self, x, y, angle, car_color, drifting=False, visible=True):
-        """
-        Update the car's position and rotation from external state.
-
-        :param x: New x-position.
-        :param y: New y-position.
-        :param angle: New angle (in degrees).
-        :param drifting: Whether the car is drifting.
-        """
-        self.x = x
-        self.y = y
-        self.angle = angle
-        self.is_drifting = drifting
-        self.visible = visible
-        self.car_color = car_color
-
-
-    def draw(self, screen, camera):
-        """
-        Draw the car and the player's name above it.
-
-        :param screen: Pygame screen surface.
-        :param camera: Camera object for applying world-to-screen transformation.
-        """
-        # Draw car
-        car_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        body_color = RED if self.is_drifting else self.car_color
-        pygame.draw.rect(car_surface, body_color, (0, 0, self.width, self.height))
-        pygame.draw.rect(car_surface, RED, (self.width - 5, 0, 5, self.height))
-
-        rotated_car = pygame.transform.rotate(car_surface, -self.angle)
-        screen_x, screen_y = camera.apply(self.x, self.y)
-        car_rect = rotated_car.get_rect(center=(screen_x, screen_y))
-        screen.blit(rotated_car, car_rect)
-
-        # Draw player name above car
-        name_surface = self.font.render(self.name, True, BLACK)
-        name_rect = name_surface.get_rect(midbottom=(screen_x, screen_y - self.height // 2 - 5))
-        screen.blit(name_surface, name_rect)
-
-
-class Car:
-    def __init__(self, x, y, car_color):
-        self.x = x
-        self.y = y
-        self.angle = 0
-        self.velocity_x = 0
-        self.velocity_y = 0
-        self.max_speed = MAX_SPEED
-        self.acceleration = ACCELERATION
-        self.friction = 0.1
-        self.turn_speed = TURN_SPEED
-        self.drift_turn_speed = DRIFT_TURN_SPEED
-        self.is_drifting = False
-        self.width = 30
-        self.height = 15
-        self.last_skid_time = 0
-        self.skid_interval = 0.05
-        self.car_color = car_color
-
-    def get_speed(self):
-        """Returns the Car's current speed in m/s"""
-        return math.sqrt(self.velocity_x**2 + self.velocity_y**2)
-    
-    def get_speed_kmh(self):
-        """Returns the Car's current speed in km/h"""
-        return self.get_speed() * 3.6
-
-    def draw(self, screen, camera):
-        car_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        car_color = RED if self.is_drifting else self.car_color
-        pygame.draw.rect(car_surface, car_color, (0, 0, self.width, self.height))
-        pygame.draw.rect(car_surface, RED, (self.width - 5, 0, 5, self.height))
-        rotated_car = pygame.transform.rotate(car_surface, -self.angle)
-        screen_x, screen_y = camera.apply(self.x, self.y)
-        car_rect = rotated_car.get_rect(center=(screen_x, screen_y))
-        screen.blit(rotated_car, car_rect)
-
-    def update(self, keys, skid_marks):
-        current_speed = math.sqrt(self.velocity_x**2 + self.velocity_y**2)
-        self.is_drifting = keys[pygame.K_SPACE] and current_speed > 1
-
-        if keys[pygame.K_w]:
-            self.velocity_x += self.acceleration * math.cos(math.radians(self.angle))
-            self.velocity_y += self.acceleration * math.sin(math.radians(self.angle))
-        elif keys[pygame.K_s]:
-            self.velocity_x -= self.acceleration * 0.5 * math.cos(math.radians(self.angle))
-            self.velocity_y -= self.acceleration * 0.5 * math.sin(math.radians(self.angle))
-
-        if current_speed > 0.1:
-            turn_speed = self.drift_turn_speed if self.is_drifting else self.turn_speed
-            if keys[pygame.K_a]:
-                self.angle -= turn_speed
-            elif keys[pygame.K_d]:
-                self.angle += turn_speed
-
-        if self.is_drifting:
-            self.velocity_x *= 0.96
-            self.velocity_y *= 0.96
-        else:
-            forward_x = math.cos(math.radians(self.angle))
-            forward_y = math.sin(math.radians(self.angle))
-
-            forward_velocity = self.velocity_x * forward_x + self.velocity_y * forward_y
-            sideways_velocity_x = self.velocity_x - forward_velocity * forward_x
-            sideways_velocity_y = self.velocity_y - forward_velocity * forward_y
-
-            sideways_velocity_x *= 0.3
-            sideways_velocity_y *= 0.3
-            forward_velocity *= 0.98
-
-            self.velocity_x = forward_velocity * forward_x + sideways_velocity_x
-            self.velocity_y = forward_velocity * forward_y + sideways_velocity_y
-
-            current_speed = math.sqrt(self.velocity_x**2 + self.velocity_y**2)
-            if current_speed > self.max_speed:
-                self.velocity_x = (self.velocity_x / current_speed) * self.max_speed
-                self.velocity_y = (self.velocity_y / current_speed) * self.max_speed
-
-        if self.is_drifting:
-            current_time = time.time()
-            if current_time - self.last_skid_time > self.skid_interval:
-                rear_offset = -self.width // 3
-                rear_x = self.x + rear_offset * math.cos(math.radians(self.angle))
-                rear_y = self.y + rear_offset * math.sin(math.radians(self.angle))
-
-                tire_offset = self.height // 3
-                left_x = rear_x + tire_offset * math.cos(math.radians(self.angle + 90))
-                left_y = rear_y + tire_offset * math.sin(math.radians(self.angle + 90))
-                right_x = rear_x + tire_offset * math.cos(math.radians(self.angle - 90))
-                right_y = rear_y + tire_offset * math.sin(math.radians(self.angle - 90))
-
-                skid_marks.append(SkidMark(left_x, left_y, self.angle))
-                skid_marks.append(SkidMark(right_x, right_y, self.angle))
-                self.last_skid_time = current_time
-
-        if keys[pygame.K_c]:
-            self.car_color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
-
-        self.x += self.velocity_x
-        self.y += self.velocity_y
-
-
 def draw_road_markings(screen, camera, window):
     """Draw infinite road markings that adapt to window size"""
     # Calculate visible area based on camera position and current window size
@@ -280,7 +79,6 @@ def draw_road_markings(screen, camera, window):
         # Only draw if visible on screen
         if -50 <= line_start_y <= window.height + 50:
             pygame.draw.line(screen, GRAY, (line_start_x, line_start_y), (line_end_x, line_end_y), 5)
-
 
 def draw_ui(screen, car, window):
     """Draw UI elements that adapt to window size"""
@@ -322,7 +120,6 @@ def draw_ui(screen, car, window):
         control_text = controls_font.render(text, True, BLACK)
         screen.blit(control_text, (10, 130 + i * 25))
 
-
 def main():
     # Create the game window manager
     game_window = GameWindow()
@@ -336,11 +133,14 @@ def main():
     config = menu.run()
     
     # Create car at world position (0, 0)
-    car = Car(0, 0, config["car_color"])
+    car = Car(0, 0, config["car_color"], MAX_SPEED, ACCELERATION, TURN_SPEED, DRIFT_TURN_SPEED, MAX_NITRO)
 
     # Create a Speedometer
     speedometer = Speedometer(x=game_window.width - 100, y=game_window.height - 100, radius=80, max_speed=car.max_speed, unit="km/h", show_digital_speedometer=False)
     
+    # Create a Nitro Gauge
+    nitro_gauge = NitroGauge(x=game_window.width - 260, y=game_window.height - 160, max_nitro_ml=MAX_NITRO, height=150, width=80)
+
     # Create camera with window reference
     camera = Camera(game_window)
     
@@ -396,15 +196,19 @@ def main():
                 screen = pygame.display.set_mode((game_window.width, game_window.height), pygame.RESIZABLE)
                 speedometer.x = game_window.width - 100
                 speedometer.y = game_window.height - 100
+                nitro_gauge.x = game_window.width - 260
+                nitro_gauge.y = game_window.height - 160
                 print(f"Window resized to: {game_window.width}x{game_window.height}")
 
         # Get pressed keys
         keys = pygame.key.get_pressed()
         
         # Update car
-        car.update(keys, skid_marks)
+        car.update(keys, skid_marks, 1 / FPS)
         speedometer.update_speed(car.get_speed_kmh())
         speedometer.update()
+        nitro_gauge.update_nitro(car.current_nitro)
+        nitro_gauge.update()
 
         # Send local car state to server
         client.send_player_state(car.x, car.y, car.angle, car.is_drifting, car.car_color)
@@ -428,6 +232,7 @@ def main():
         # Draw car
         car.draw(screen, camera)
         speedometer.draw(screen)
+        nitro_gauge.draw(screen)
 
         # Draw all remote multiplayer cars
         for mp_car in remote_players.values():
