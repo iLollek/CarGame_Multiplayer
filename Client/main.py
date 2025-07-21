@@ -1,7 +1,10 @@
 import pygame
 import sys
 from CarGameClient import CarGameClient
-from MainMenu import MainMenu
+from ctkMainMenu import MainMenu
+import signal
+import os
+from tkinter import messagebox
 
 # Game Objects
 from Speedometers import Speedometer, NitroGauge
@@ -29,6 +32,9 @@ RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 GREEN = (0, 255, 0)
 GRAY = (128, 128, 128)
+
+points = 0
+received_highspeed_bonus = False
 
 class GameWindow:
     def __init__(self):
@@ -85,19 +91,23 @@ def draw_ui(screen, car, window):
     # Create fonts
     font = pygame.font.Font(None, 36)
     controls_font = pygame.font.Font(None, 24)
+
+    # Display Points
+    points_text = font.render(f"Points: {points:.0f}", True, BLACK)
+    screen.blit(points_text, (10, 0))
     
     # Display speed (UI elements stay on screen)
     speed_text = font.render(f"Speed: {car.get_speed():.1f} m/s ({car.get_speed_kmh():.0f} km/h)", True, BLACK)
-    screen.blit(speed_text, (10, 10))
+    screen.blit(speed_text, (10, 30))
     
     # Display drift status
     if car.is_drifting:
         drift_text = font.render("DRIFTING!", True, RED)
-        screen.blit(drift_text, (10, 50))
+        screen.blit(drift_text, (10, 60))
     
     # Display car position for reference
     pos_text = font.render(f"Position: ({car.x:.0f}, {car.y:.0f})", True, BLACK)
-    screen.blit(pos_text, (10, 90))
+    screen.blit(pos_text, (10, 100))
     
     # Display window size in top right
     size_text = controls_font.render(f"Window: {window.width}x{window.height}", True, BLACK)
@@ -112,6 +122,7 @@ def draw_ui(screen, car, window):
         "A - Turn Left",
         "D - Turn Right",
         "SPACE - Handbrake/Drift",
+        "SHIFT - Hold for Nitro",
         "C - Change Car Color",
         "ESC - Exit"
     ]
@@ -120,7 +131,36 @@ def draw_ui(screen, car, window):
         control_text = controls_font.render(text, True, BLACK)
         screen.blit(control_text, (10, 130 + i * 25))
 
+def calculate_points(car: Car):
+    global received_highspeed_bonus
+    global points
+    if car.get_speed_kmh() > 50: # This is a Bonus for high speed
+        if received_highspeed_bonus == False:
+            received_highspeed_bonus = True
+            points = points + 500
+    else:
+        if received_highspeed_bonus == True: received_highspeed_bonus = False # Reset
+
+    if car.nitro_active == True:
+        points = points + 2
+    
+    if car.is_drifting == True:
+        points = points + car.get_speed_kmh() / 10
+
+def close():
+    os.kill(os.getpid(), signal.SIGTERM) # This is the last line that gets executed.
+
+def network_error_close(error_description: str):
+    messagebox.showerror(
+        'Connection Lost!',
+        f'The connection to the server has been lost. Please try reconnecting.\n\n({error_description})'
+    )
+    close()
+
+
 def main():
+    menu = MainMenu()
+    config = menu.run()
     # Create the game window manager
     game_window = GameWindow()
     
@@ -128,18 +168,20 @@ def main():
     screen = pygame.display.set_mode((game_window.width, game_window.height), pygame.RESIZABLE)
     pygame.display.set_caption("Top-Down Car Game - Resizable")
     clock = pygame.time.Clock()
-
-    menu = MainMenu(screen)
-    config = menu.run()
     
+    if config["fullscreen"] == 1: # Fullscreen Support
+        screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        info = pygame.display.Info()
+        game_window.update_size(info.current_w, info.current_h)
+
     # Create car at world position (0, 0)
     car = Car(0, 0, config["car_color"], MAX_SPEED, ACCELERATION, TURN_SPEED, DRIFT_TURN_SPEED, MAX_NITRO)
 
     # Create a Speedometer
-    speedometer = Speedometer(x=game_window.width - 100, y=game_window.height - 100, radius=80, max_speed=car.max_speed, unit="km/h", show_digital_speedometer=False)
+    speedometer = Speedometer(x=game_window.width - 100, y=game_window.height - 100, radius=80, max_speed=100, unit="km/h", show_digital_speedometer=False)
     
     # Create a Nitro Gauge
-    nitro_gauge = NitroGauge(x=game_window.width - 260, y=game_window.height - 160, max_nitro_ml=MAX_NITRO, height=150, width=80)
+    nitro_gauge = NitroGauge(x=game_window.width - 260, y=game_window.height - 160, max_nitro_ml=MAX_NITRO, height=150, width=80, text_color=(0, 255, 0))
 
     # Create camera with window reference
     camera = Camera(game_window)
@@ -148,8 +190,13 @@ def main():
     skid_marks = []
     
     # NETWORK SETUP
-    client = CarGameClient(config["server"], config["port"], config["player_name"], config["car_color"])
-    client.connect()
+    client = CarGameClient(config["server"], config["port"], config["player_name"], config["car_color"], network_error_close)
+    try:
+        client.connect()
+    except Exception as e:
+        messagebox.showerror(f'No Connection to Server', f'Unable to Connect to {config["server"]} on Port {config["port"]}! ({e})')
+        close()
+        
 
     remote_players = {}
 
@@ -163,7 +210,10 @@ def main():
             angle=data["angle"],
             drifting=data.get("is_drifting", False),
             visible=True,
-            car_color=data["car_color"]
+            car_color=data["car_color"],
+            points = data.get("points", 0),
+            boosting=data.get("is_boosting", False),
+            speed_kmh=data.get("speed_kmh", 0)
         )
 
     def on_player_disconnect(name):
@@ -207,11 +257,14 @@ def main():
         car.update(keys, skid_marks, 1 / FPS)
         speedometer.update_speed(car.get_speed_kmh())
         speedometer.update()
+        if car.nitro_active == False:
+            if car.current_nitro < MAX_NITRO:
+                car.current_nitro += 1
         nitro_gauge.update_nitro(car.current_nitro)
         nitro_gauge.update()
 
         # Send local car state to server
-        client.send_player_state(car.x, car.y, car.angle, car.is_drifting, car.car_color)
+        client.send_player_state(car.x, car.y, car.angle, car.is_drifting, car.car_color, points, car.nitro_active, car.get_speed_kmh())
         
         # Update camera to follow car
         camera.update(car)
@@ -239,6 +292,8 @@ def main():
             if mp_car.visible == True:
                 mp_car.draw(screen, camera)
         
+        calculate_points(car)
+
         # Draw UI elements
         draw_ui(screen, car, game_window)
         
@@ -249,7 +304,7 @@ def main():
     # Quit
     client.close()
     pygame.quit()
-    sys.exit()
+    close()
 
 if __name__ == "__main__":
     main()

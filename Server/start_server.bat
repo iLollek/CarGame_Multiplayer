@@ -1,2 +1,2 @@
-python CarGameServer.py
+python main.py
 pause

@@ -65,8 +65,9 @@ class MultiplayerCar:
         self.height = 15
         self.font = pygame.font.Font(None, 24)
         self.visible = True
+        self.points = 0
 
-    def update_state(self, x, y, angle, car_color, drifting=False, visible=True):
+    def update_state(self, x, y, angle, car_color, drifting=False, visible=True, points=0):
         """
         Update the car's position and rotation from external state.
 
@@ -81,6 +82,7 @@ class MultiplayerCar:
         self.is_drifting = drifting
         self.visible = visible
         self.car_color = car_color
+        self.points = points
 
 
     def draw(self, screen, camera):
@@ -102,7 +104,7 @@ class MultiplayerCar:
         screen.blit(rotated_car, car_rect)
 
         # Draw player name above car
-        name_surface = self.font.render(self.name, True, BLACK)
+        name_surface = self.font.render(f'{self.name} ({self.points:.0f} pts)', True, BLACK)
         name_rect = name_surface.get_rect(midbottom=(screen_x, screen_y - self.height // 2 - 5))
         screen.blit(name_surface, name_rect)
 
@@ -128,6 +130,10 @@ class Car:
         self.nitro_active = False
         self.nitro_acceleration_boost = 0.3  # zusätzliche Beschleunigung bei Nitro
         self.nitro_usage_rate = 20.0  # ml pro Sekunde
+        
+        # Flammen-Parameter für Nitro-Effekt
+        self.flame_particles = []
+        self.flame_spawn_timer = 0
 
     def get_speed(self):
         """Returns the Car's current speed in m/s"""
@@ -150,12 +156,82 @@ class Car:
         if using_nitro:
             self.current_nitro -= self.nitro_usage_rate * dt
             self.current_nitro = max(0, self.current_nitro)
+            
+            # Flammen-Partikel spawnen während Nitro aktiv ist
+            self.spawn_flame_particles(dt)
+        
+        # Flammen-Partikel aktualisieren (auch wenn Nitro nicht aktiv, damit sie auslaufen)
+        self.update_flame_particles(dt)
 
+    def spawn_flame_particles(self, dt):
+        """Spawnt Flammen-Partikel am Heck des Autos während Nitro aktiv ist"""
+        self.flame_spawn_timer += dt
+        
+        # Flammen alle 0.02 Sekunden spawnen für flüssigen Effekt
+        if self.flame_spawn_timer >= 0.02:
+            # Position am Heck des Autos berechnen
+            rear_offset = -self.width // 2 - 5  # Etwas hinter dem Auto
+            rear_x = self.x + rear_offset * math.cos(math.radians(self.angle))
+            rear_y = self.y + rear_offset * math.sin(math.radians(self.angle))
+            
+            # Mehrere Flammen-Partikel für besseren Effekt
+            for i in range(2):
+                # Leichte Variation in der Position
+                offset_y = (i - 0.5) * 8
+                flame_x = rear_x + offset_y * math.cos(math.radians(self.angle + 90))
+                flame_y = rear_y + offset_y * math.sin(math.radians(self.angle + 90))
+                
+                # Flammen-Partikel erstellen
+                particle = {
+                    'x': flame_x,
+                    'y': flame_y,
+                    'size': random.uniform(3, 8),
+                    'life': random.uniform(0.1, 0.3),  # Kurze Lebensdauer
+                    'max_life': random.uniform(0.1, 0.3),
+                    'velocity_x': random.uniform(-10, 10),
+                    'velocity_y': random.uniform(-10, 10)
+                }
+                self.flame_particles.append(particle)
+            
+            self.flame_spawn_timer = 0
+
+    def update_flame_particles(self, dt):
+        """Aktualisiert alle Flammen-Partikel"""
+        for particle in self.flame_particles[:]:  # Kopie der Liste für sicheres Entfernen
+            particle['life'] -= dt
+            particle['x'] += particle['velocity_x'] * dt
+            particle['y'] += particle['velocity_y'] * dt
+            
+            # Partikel entfernen wenn Lebensdauer abgelaufen
+            if particle['life'] <= 0:
+                self.flame_particles.remove(particle)
+
+    def draw_flame_particles(self, screen, camera):
+        """Zeichnet die Flammen-Partikel"""
+        for particle in self.flame_particles:
+            screen_x, screen_y = camera.apply(particle['x'], particle['y'])
+            
+            # Farbe basierend auf Lebensdauer (von gelb/orange zu rot)
+            life_ratio = particle['life'] / particle['max_life']
+            if life_ratio > 0.7:
+                color = (255, 255, 100)  # Gelb
+            elif life_ratio > 0.4:
+                color = (255, 150, 0)    # Orange
+            else:
+                color = (255, 50, 0)     # Rot
+            
+            # Größe basierend auf Lebensdauer
+            current_size = int(particle['size'] * life_ratio)
+            if current_size > 0:
+                pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), current_size)
 
     def draw(self, screen, camera):
+        # Zuerst Flammen zeichnen (damit sie hinter dem Auto erscheinen)
+        self.draw_flame_particles(screen, camera)
+        
+        # Dann das Auto zeichnen
         car_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        car_color = RED if self.is_drifting else self.car_color
-        pygame.draw.rect(car_surface, car_color, (0, 0, self.width, self.height))
+        pygame.draw.rect(car_surface, self.car_color, (0, 0, self.width, self.height))
         pygame.draw.rect(car_surface, RED, (self.width - 5, 0, 5, self.height))
         rotated_car = pygame.transform.rotate(car_surface, -self.angle)
         screen_x, screen_y = camera.apply(self.x, self.y)

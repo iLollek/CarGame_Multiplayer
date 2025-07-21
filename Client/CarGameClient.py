@@ -2,11 +2,10 @@ import socket
 import threading
 import json
 
-
 class CarGameClient:
     """Client for connecting to the car game server."""
 
-    def __init__(self, server_ip, server_port, player_name, car_color: list[int]):
+    def __init__(self, server_ip, server_port, player_name, car_color: list[int], error_close_function):
         self.server_ip = server_ip
         self.server_port = server_port
         self.player_name = player_name
@@ -18,6 +17,8 @@ class CarGameClient:
         self.other_players = {}
         self.on_player_update = None
         self.on_player_disconnect = None
+
+        self.error_close_function = error_close_function
 
     def connect(self):
         """Establish connection to the server and start listening thread."""
@@ -63,11 +64,12 @@ class CarGameClient:
                         print(f"[WARN] Received invalid JSON: {line}")
             except ConnectionResetError:
                 print("[ERROR] Server connection lost (ConnectionResetError)")
+                self.error_close_function("ConnectionResetError")
                 break
 
         self.running = False
 
-    def send_player_state(self, x, y, angle, is_drifting, car_color):
+    def send_player_state(self, x, y, angle, is_drifting, car_color, points, is_boosting, speed_kmh):
         """Send the local player's position/state to the server."""
         if not self.running:
             return
@@ -78,7 +80,10 @@ class CarGameClient:
                 "y": y,
                 "angle": angle,
                 "is_drifting": is_drifting,
-                "car_color": car_color
+                "car_color": car_color,
+                "points" : points,
+                "is_boosting" : is_boosting,
+                "speed_kmh" : speed_kmh
             }
             # send JSON with newline delimiter
             self.sock.sendall((json.dumps(message) + '\n').encode('utf-8'))

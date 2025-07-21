@@ -32,6 +32,7 @@ class ClientHandler(threading.Thread):
                         message = json.loads(line)
                         self.name = message.get("name", "Unknown")
                         self.server.broadcast(message, exclude=self)
+                        self.server.forward_to_ui(message)
                     except json.JSONDecodeError:
                         print(f"[WARN] Invalid data from {self.addr}: {line}")
         except (ConnectionResetError, ConnectionAbortedError):
@@ -58,12 +59,13 @@ class ClientHandler(threading.Thread):
 class CarGameServer:
     """TCP server for multiplayer car game."""
 
-    def __init__(self, host="0.0.0.0", port=5000):
+    def __init__(self, host="0.0.0.0", port=5000, ui_callback=None):
         self.host = host
         self.port = port
         self.server_socket = None
         self.clients = []
         self.lock = threading.Lock()
+        self.ui_callback = ui_callback  # <--- neu
 
     def start(self):
         """Starts the server and accepts new clients."""
@@ -108,6 +110,10 @@ class CarGameServer:
             self.server_socket.close()
             print("[INFO] Server socket closed")
 
+    def forward_to_ui(self, message: dict):
+        """Optional: Forward message to UI"""
+        if self.ui_callback:
+            self.ui_callback(message)
 
 if __name__ == "__main__":
     server = CarGameServer(host="127.0.0.1", port=5000)
