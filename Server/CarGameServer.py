@@ -2,6 +2,11 @@ import socket
 import threading
 import json
 
+class LogLevel:
+    INFO = 'INFO'
+    WARN = 'WARN'
+    ERROR = 'ERROR'
+
 class ClientHandler(threading.Thread):
     """Handles a single client connection."""
 
@@ -15,6 +20,7 @@ class ClientHandler(threading.Thread):
 
     def run(self):
         buffer = ""
+        self.server.forward_to_ui({"event": "join", "ip_addr": {self.addr[0]}})
         try:
             while self.running:
                 data = self.conn.recv(1024)
@@ -50,6 +56,7 @@ class ClientHandler(threading.Thread):
     def stop(self):
         if self.running:
             print(f"[INFO] Client disconnected: {self.addr}")
+            self.server.forward_to_ui({"event": "leave", "name": self.name})
             self.running = False
             self.conn.close()
             self.server.remove_client(self)
@@ -59,13 +66,14 @@ class ClientHandler(threading.Thread):
 class CarGameServer:
     """TCP server for multiplayer car game."""
 
-    def __init__(self, host="0.0.0.0", port=5000, ui_callback=None):
+    def __init__(self, host="0.0.0.0", port=5000, ui_callback=None, ui_logbox_callback=None):
         self.host = host
         self.port = port
         self.server_socket = None
         self.clients = []
         self.lock = threading.Lock()
         self.ui_callback = ui_callback  # <--- neu
+        self.ui_logbox_callback = ui_logbox_callback
 
     def start(self):
         """Starts the server and accepts new clients."""
@@ -114,6 +122,26 @@ class CarGameServer:
         """Optional: Forward message to UI"""
         if self.ui_callback:
             self.ui_callback(message)
+
+    def kick_player_by_name(self, player_name: str, reason: str) -> bool:
+        """Kicks a Player from the Server"""
+        print(f'Kicking {player_name}')
+        try:
+            for client in self.clients:
+                print(f'Client: {client} - Clients: {self.clients}')
+                client: ClientHandler
+                if client.name == player_name:
+                    # Client found, execute a kick
+                    client.send({"event": "kicked", "reason": reason})
+                    self.remove_client(client)
+                    client.stop()
+                    self.ui_logbox_callback(LogLevel.INFO, f'Kicked {player_name} from the Server!')
+                    return
+            self.ui_logbox_callback(LogLevel.WARN, f'Unable to find {player_name}: Did the Player already disconnect?')
+        except Exception as e:
+            self.ui_logbox_callback(LogLevel.ERROR, f'Unable to kick {player_name}: {e}')
+
+
 
 if __name__ == "__main__":
     server = CarGameServer(host="127.0.0.1", port=5000)

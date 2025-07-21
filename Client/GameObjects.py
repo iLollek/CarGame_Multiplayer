@@ -66,8 +66,10 @@ class MultiplayerCar:
         self.font = pygame.font.Font(None, 24)
         self.visible = True
         self.points = 0
+        self.boosting = False
+        self.speed_kmh = 0
 
-    def update_state(self, x, y, angle, car_color, drifting=False, visible=True, points=0):
+    def update_state(self, x, y, angle, car_color, drifting=False, visible=True, points=0, boosting=False, speed_kmh=0):
         """
         Update the car's position and rotation from external state.
 
@@ -83,6 +85,8 @@ class MultiplayerCar:
         self.visible = visible
         self.car_color = car_color
         self.points = points
+        self.boosting = boosting
+        self.speed_kmh = speed_kmh
 
 
     def draw(self, screen, camera):

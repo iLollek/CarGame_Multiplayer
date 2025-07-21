@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
+from datetime import datetime
 
 class LogLevel:
     INFO = 'INFO'
@@ -13,13 +14,14 @@ class CarGameServerUI(tk.Tk):
     Graphische Benutzeroberfläche zur Anzeige und Verwaltung verbundener Spieler.
     """
 
-    def __init__(self):
+    def __init__(self, kick_player_function=None):
         super().__init__()
         self.title("Car Game Server UI")
         self.geometry("1000x600")
         self.players = {}
         self._build_ui()
         self.player_kick_by_name_function = None
+        self.kick_player_function = kick_player_function
 
     def _build_ui(self):
         # Spieler-Tabelle
@@ -47,12 +49,22 @@ class CarGameServerUI(tk.Tk):
         self.log_box = ScrolledText(self, height=10, state="disabled", bg="black", fg="white")
         self.log_box.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-    def update_player(self, player_data):
+    def update_player(self, player_data: dict):
         """
         Aktualisiert oder fügt einen Spieler in der Tabelle hinzu.
 
         :param player_data: dict mit allen Feldern vom Client
         """
+        if player_data.get("event", None) == "join":
+            # A Player joined the Server
+            self.log(LogLevel.INFO, f'Connection from {player_data.get("ip_addr", "Unknown (no ip_addr key)")}')
+            return
+        elif player_data.get("event", None) == "leave":
+            # A Player left the Server
+            self.log(LogLevel.INFO, f'{player_data.get("name", "Unknown Player (no name key)")} left the Server.')
+            self.remove_player(player_data.get("name", None))
+            return
+
         name = player_data["name"]
         self.players[name] = player_data
 
@@ -68,8 +80,8 @@ class CarGameServerUI(tk.Tk):
 
         if not found:
             self.player_tree.insert('', tk.END, values=self._player_to_row(player_data))
+            self.log(LogLevel.INFO, f'Player {name} joined the Server')
 
-        # self.log(LogLevel.INFO, f"Update from {name}")
         self.update_stats()
 
     def remove_player(self, name):
@@ -85,12 +97,11 @@ class CarGameServerUI(tk.Tk):
                 self.player_tree.delete(item)
                 break
         self.update_stats()
-        self.log(LogLevel.INFO, f"Player '{name}' removed")
+        self.log(LogLevel.INFO, f"Player '{name}' removed (from UI Table)")
 
     def kick_selected_player(self):
         """
         Entfernt den aktuell ausgewählten Spieler aus der UI.
-        (Erweiterbar: Kommunikation mit dem Server über Queue oder Socket)
         """
         selected = self.player_tree.selection()
         if not selected:
@@ -98,8 +109,9 @@ class CarGameServerUI(tk.Tk):
 
         item = selected[0]
         name = self.player_tree.item(item)['values'][0]
+        self.kick_player_function(name, "No Reason specified.")
         self.remove_player(name)
-        self.log(LogLevel.WARN, f"Player '{name}' kicked (local only)")
+        self.log(LogLevel.WARN, f"Player '{name}' kicked")
 
     def update_stats(self):
         """
@@ -120,7 +132,7 @@ class CarGameServerUI(tk.Tk):
         """
         self.log_box.config(state='normal')
         color = {"INFO": "white", "WARN": "yellow", "ERROR": "red"}.get(level, "white")
-        self.log_box.insert(tk.END, f"[{level}] {message}\n", level)
+        self.log_box.insert(tk.END, f"[{level}|{datetime.now().strftime('%H:%M:%S')}] {message}\n", level)
         self.log_box.tag_config(level, foreground=color)
         self.log_box.config(state='disabled')
         self.log_box.see(tk.END)
@@ -135,8 +147,8 @@ class CarGameServerUI(tk.Tk):
         return (
             player.get("name", ""),
             player.get("car_color", ""),
-            player.get("points", 0),
-            player.get("speed_kmh", 0),
+            round(player.get("points", 0), 1),
+            round(player.get("speed_kmh", 0), 1),
             "Yes" if player.get("is_drifting") else "No",
             "Yes" if player.get("is_boosting") else "No",
             round(player.get("x", 0), 1),

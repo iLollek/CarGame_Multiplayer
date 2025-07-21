@@ -9,7 +9,8 @@ def main():
         app.update_player(message)
 
     def start_server():
-        server = CarGameServer(host="127.0.0.1", port=5000, ui_callback=ui_callback)
+        server = CarGameServer(host="127.0.0.1", port=5000, ui_callback=ui_callback, ui_logbox_callback=app.log)
+        app.kick_player_function = server.kick_player_by_name
         server.start()
 
     threading.Thread(target=start_server, daemon=True).start()

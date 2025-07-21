@@ -97,6 +97,8 @@ class CarGameClient:
 
         if event == "disconnect":
             self.on_player_disconnect(message.get("name"))
+        elif event == "kicked":
+            self.error_close_function(f"You have been kicked from the Server. Reason: {message.get('reason', 'No reason specified by the Server.')}")
 
     def close(self):
         """Close the connection to the server."""
